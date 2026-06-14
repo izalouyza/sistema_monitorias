@@ -1,0 +1,55 @@
+# =========================
+# DEPENDÊNCIAS DO NODE
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# =========================
+# VARIÁVEIS DE AMBIENTE (SEGREDO)
+# =========================
+# NUNCA suba suas senhas do banco PostgreSQL para o GitHub!
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =========================
+# PASTAS DE BUILD/PRODUÇÃO (FRONTEND E BACKEND)
+# =========================
+dist/
+build/
+out/
+.next/
+
+# =========================
+# LOGS E COBERTURA DE TESTES
+# =========================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+.nyc_output/
+
+# =========================
+# ARQUIVOS DE SISTEMA OPERACIONAL
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# EDITORES DE CÓDIGO / IDE
+# =========================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
