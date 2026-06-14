@@ -57,6 +57,7 @@ SGM/
 ├── docs/
 │   ├── arquitetura.md
 │   └── backlog.md
+│   └── diagramas.md
 │
 └── README.md
 ```
