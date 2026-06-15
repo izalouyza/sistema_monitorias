@@ -1,7 +1,7 @@
 
 # Modelagem e Diagramas do Sistema
 
-Este documento centraliza as modelagens visuais desenvolvidas para o planejamento da arquitetura e das regras de negócio do **Sistema de Gerenciamento de Monitorias**. 
+Este documento centraliza as modelagens visuais desenvolvidas para o planejamento da arquitetura e das regras de negócio do **UfersaMentor**. 
 
 Abaixo estão as representações do escopo de interações, estrutura estática e modelagem de dados da plataforma.
 
