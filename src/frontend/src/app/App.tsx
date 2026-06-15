@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -1246,23 +1246,42 @@ function LoginPage({
     return ok ? "" : "E-mail deve ser do domínio @alunos.ufersa.edu.br";
   }, [email]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const noEmail = !email.trim();
-    const noPass = !pass.trim();
-    setEmptyErr({ email: noEmail, pass: noPass });
-    setEmailTouched(true);
-    if (noEmail || noPass) return;
-    if (emailDomainErr) return;
-    const user = users.find((u) => u.email === email && u.password === pass);
-    if (!user) {
-      setSubmitError(
-        "E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.",
-      );
-      return;
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  // 1. Validações de front que você já tinha
+  const noEmail = !email.trim();
+  const noPass = !pass.trim();
+  setEmptyErr({ email: noEmail, pass: noPass });
+  setEmailTouched(true);
+  if (noEmail || noPass) return;
+  if (emailDomainErr) return;
+
+  // 2. Chamada para o seu Backend Real
+  try {
+    const response = await fetch('http://localhost:3001/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        matricula: email, // Usando o campo email/matrícula do seu form
+        senha: pass 
+      })
+    });
+
+    const dados = await response.json();
+
+    if (response.ok) {
+      // Sucesso! O backend devolveu o usuário validado
+      onLogin(dados.usuario); 
+    } else {
+      // Erro vindo do servidor (ex: senha incorreta ou usuário inexistente)
+      setSubmitError(dados.erro || "E-mail ou senha incorretos.");
     }
-    onLogin(user);
-  };
+  } catch (err) {
+    // Erro de conexão (ex: servidor desligado)
+    setSubmitError("Erro ao conectar ao servidor. Verifique se o backend está ligado.");
+  }
+};
 
   const openForgot = () => {
     setFpModal(true);
@@ -1590,8 +1609,6 @@ function LoginPage({
   );
 }
 
-// ─── Register Page ─────────────────────────────────────────────────────────────
-
 function RegisterPage({
   users,
   onRegister,
@@ -1614,9 +1631,7 @@ function RegisterPage({
   const [showConfirm, setShowConfirm] = useState(false);
   const [termos, setTermos] = useState(false);
   const [termosErr, setTermosErr] = useState(false);
-  const [termsModal, setTermsModal] = useState<"uso" | "privacidade" | null>(
-    null,
-  );
+  const [termsModal, setTermsModal] = useState<"uso" | "privacidade" | null>(null);
   const [success, setSuccess] = useState(false);
 
   const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
@@ -1634,500 +1649,83 @@ function RegisterPage({
 
   const errs = useMemo(() => {
     const e: Record<string, string> = {};
-    if (touched.nome && form.nome && !nameOk(form.nome))
-      e.nome = "Apenas letras e espaços (mín. 2 caracteres).";
-    if (touched.sobrenome && form.sobrenome && !nameOk(form.sobrenome))
-      e.sobrenome = "Apenas letras e espaços (mín. 2 caracteres).";
-    if (touched.matricula && form.matricula) {
-      if (!/^\d{10}$/.test(form.matricula))
-        e.matricula = "Matrícula deve ter exatamente 10 dígitos.";
-      else if (users.some((u) => u.matricula === form.matricula))
-        e.matricula = "Esta matrícula já está cadastrada no sistema.";
-    }
-    if (touched.email && form.email) {
-      if (!form.email.endsWith("@alunos.ufersa.edu.br"))
-        e.email = "E-mail deve ser do domínio @alunos.ufersa.edu.br";
-      else if (users.some((u) => u.email === form.email))
-        e.email = "Este e-mail já está cadastrado.";
-    }
-    if (touched.senha && form.senha && (!pw.length || !pw.letter || !pw.number))
-      e.senha = "A senha não atende todos os requisitos.";
-    if (touched.confirmar && form.confirmar && form.confirmar !== form.senha)
-      e.confirmar = "As senhas não coincidem.";
+    if (touched.nome && form.nome && !nameOk(form.nome)) e.nome = "Apenas letras.";
+    if (touched.sobrenome && form.sobrenome && !nameOk(form.sobrenome)) e.sobrenome = "Apenas letras.";
+    if (touched.matricula && form.matricula && !/^\d{10}$/.test(form.matricula)) e.matricula = "10 dígitos.";
+    if (touched.email && form.email && !form.email.endsWith("@alunos.ufersa.edu.br")) e.email = "Domínio inválido.";
+    if (touched.senha && form.senha && (!pw.length || !pw.letter || !pw.number)) e.senha = "Senha fraca.";
+    if (touched.confirmar && form.confirmar && form.confirmar !== form.senha) e.confirmar = "As senhas não coincidem.";
     return e;
-  }, [form, touched, users]);
+  }, [form, touched]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // A LÓGICA QUE CONECTA NO BANCO DE DADOS
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const allTouched = {
-      nome: true,
-      sobrenome: true,
-      matricula: true,
-      email: true,
-      senha: true,
-      confirmar: true,
-    };
-    setTouched(allTouched);
-    if (!termos) {
-      setTermosErr(true);
-      return;
+    setTouched({ nome: true, sobrenome: true, matricula: true, email: true, senha: true, confirmar: true });
+    
+    if (!termos) { setTermosErr(true); return; }
+    
+    if (Object.keys(errs).length > 0) return;
+
+    try {
+      const response = await fetch('http://localhost:3001/api/auth/registro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matricula: form.matricula,
+          nome: `${form.nome.trim()} ${form.sobrenome.trim()}`,
+          senha: form.senha,
+          email: form.email,
+          perfil: 'student'
+        })
+      });
+
+      if (response.ok) {
+        setSuccess(true);
+      } else {
+        const errData = await response.json();
+        alert(errData.erro || "Erro ao cadastrar.");
+      }
+    } catch (err) {
+      alert("Erro ao conectar com o backend.");
     }
-    if (
-      !nameOk(form.nome) ||
-      !nameOk(form.sobrenome) ||
-      !/^\d{10}$/.test(form.matricula) ||
-      users.some((u) => u.matricula === form.matricula) ||
-      !form.email.endsWith("@alunos.ufersa.edu.br") ||
-      users.some((u) => u.email === form.email) ||
-      !pw.length ||
-      !pw.letter ||
-      !pw.number ||
-      form.confirmar !== form.senha
-    )
-      return;
-    onRegister({
-      id: nid(),
-      name: `${form.nome.trim()} ${form.sobrenome.trim()}`,
-      email: form.email,
-      password: form.senha,
-      role: "student",
-      matricula: form.matricula,
-    });
-    setSuccess(true);
   };
 
   if (success)
     return (
-      <div
-        className="min-h-screen flex flex-col"
-        style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}
-      >
-        <header className="bg-white border-b border-slate-200 py-4 px-6 text-center">
-          <h1
-            className="text-2xl font-extrabold"
-            style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}
-          >
-            UfersaMentor
-          </h1>
-          <p
-            className="text-xs font-medium tracking-widest uppercase mt-0.5"
-            style={{ color: PRIMARY_BG }}
-          >
-            Ufersa – Pau dos Ferros
-          </p>
-        </header>
-        <main className="flex-1 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-10 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-            </div>
-            <h2
-              className="text-xl font-bold text-slate-800 mb-2"
-              style={{ fontFamily: "Manrope, sans-serif" }}
-            >
-              Cadastro realizado!
-            </h2>
-            <p className="text-slate-500 text-sm mb-1">
-              Bem-vindo,{" "}
-              <span className="font-semibold text-slate-700">{form.nome}</span>.
-            </p>
-            <p className="text-slate-400 text-xs mb-7">
-              Sua conta foi criada. Você já pode acessar o portal.
-            </p>
-            <button
-              onClick={onGoLogin}
-              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm"
-              style={{ backgroundColor: PRIMARY_BG }}
-            >
-              Ir para o Login
-            </button>
-          </div>
-        </main>
-        <footer className="text-center py-3.5 text-xs text-slate-400 border-t border-slate-200 bg-white">
-          © 2026 UfersaMentor – Gerenciamento de Monitorias. Todos os direitos
-          reservados.
-        </footer>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white p-10 rounded-2xl shadow-xl text-center">
+            <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Cadastro realizado!</h2>
+            <button onClick={onGoLogin} className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg">Ir para o Login</button>
+        </div>
       </div>
     );
 
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}
-    >
-      <header className="bg-white border-b border-slate-200 py-4 px-6 text-center">
-        <h1
-          className="text-2xl font-extrabold"
-          style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}
-        >
-          UfersaMentor
-        </h1>
-        <p
-          className="text-xs font-medium tracking-widest uppercase mt-0.5"
-          style={{ color: PRIMARY_BG }}
-        >
-          Ufersa – Pau dos Ferros
-        </p>
-      </header>
-      <main className="flex-1 flex items-center justify-center p-4 py-8">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
-          <div className="mb-6">
-            <h2
-              className="text-xl font-bold text-slate-800"
-              style={{ fontFamily: "Manrope, sans-serif" }}
-            >
-              Criar conta
-            </h2>
-            <p className="text-slate-500 text-sm mt-1">
-              Preencha os dados abaixo para se cadastrar
-            </p>
-          </div>
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Nome" error={errs.nome}>
-                <input
-                  value={form.nome}
-                  onChange={(e) => setF("nome", e.target.value)}
-                  onBlur={() => touch("nome")}
-                  placeholder="Seu Nome"
-                  className={inputCls(!!errs.nome)}
-                />
-              </FormField>
-              <FormField label="Sobrenome" error={errs.sobrenome}>
-                <input
-                  value={form.sobrenome}
-                  onChange={(e) => setF("sobrenome", e.target.value)}
-                  onBlur={() => touch("sobrenome")}
-                  placeholder="Seu Sobrenome"
-                  className={inputCls(!!errs.sobrenome)}
-                />
-              </FormField>
-            </div>
-            <FormField label="Matrícula" error={errs.matricula}>
-              <input
-                value={form.matricula}
-                onChange={(e) =>
-                  setF("matricula", e.target.value.replace(/\D/g, ""))
-                }
-                onBlur={() => touch("matricula")}
-                placeholder="Ex: 2022001234"
-                maxLength={10}
-                className={inputCls(!!errs.matricula)}
-              />
-            </FormField>
-            <FormField label="E-mail Institucional" error={errs.email}>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setF("email", e.target.value)}
-                onBlur={() => touch("email")}
-                placeholder="seunome@alunos.ufersa.edu.br"
-                className={inputCls(!!errs.email)}
-              />
-            </FormField>
-            <FormField label="Senha" error={errs.senha}>
-              <div className="relative">
-                <input
-                  type={showPass ? "text" : "password"}
-                  value={form.senha}
-                  onChange={(e) => setF("senha", e.target.value)}
-                  onBlur={() => touch("senha")}
-                  placeholder="Crie uma senha segura"
-                  className={`${inputCls(!!errs.senha)} pr-10`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-                >
-                  {showPass ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-              <div className="mt-2 space-y-1.5">
-                {[
-                  { ok: pw.length, label: "Mínimo 8 caracteres" },
-                  { ok: pw.letter, label: "Contém letras" },
-                  { ok: pw.number, label: "Contém números" },
-                ].map(({ ok, label }) => (
-                  <div
-                    key={label}
-                    className={`flex items-center gap-1.5 text-xs transition ${ok ? "text-emerald-600" : "text-slate-400"}`}
-                  >
-                    {ok ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <div className="w-3.5 h-3.5 rounded-full border-2 border-current" />
-                    )}
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </FormField>
-            <FormField label="Confirmar Senha" error={errs.confirmar}>
-              <div className="relative">
-                <input
-                  type={showConfirm ? "text" : "password"}
-                  value={form.confirmar}
-                  onChange={(e) => setF("confirmar", e.target.value)}
-                  onBlur={() => touch("confirmar")}
-                  placeholder="Repita a senha"
-                  className={`${inputCls(!!errs.confirmar)} pr-10`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-                >
-                  {showConfirm ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </FormField>
-            <div>
-              <label className="flex items-start gap-3 cursor-pointer select-none group">
-                <div
-                  className={`mt-0.5 w-4 h-4 flex-shrink-0 rounded border-2 flex items-center justify-center transition ${termos ? "border-[#3B69B0] bg-[#3B69B0]" : termosErr ? "border-rose-400" : "border-slate-300 group-hover:border-[#3B69B0]"}`}
-                  onClick={() => {
-                    setTermos((t) => !t);
-                    setTermosErr(false);
-                  }}
-                >
-                  {termos && <CheckCircle2 className="w-3 h-3 text-white" />}
-                </div>
-                <input
-                  type="checkbox"
-                  checked={termos}
-                  onChange={(e) => {
-                    setTermos(e.target.checked);
-                    setTermosErr(false);
-                  }}
-                  className="sr-only"
-                />
-                <span className="text-sm text-slate-600">
-                  Li e concordo com os{" "}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setTermsModal("uso");
-                    }}
-                    className="font-semibold hover:underline"
-                    style={{ color: PRIMARY_BG }}
-                  >
-                    Termos de Uso
-                  </button>{" "}
-                  e a{" "}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setTermsModal("privacidade");
-                    }}
-                    className="font-semibold hover:underline"
-                    style={{ color: PRIMARY_BG }}
-                  >
-                    Política de Privacidade
-                  </button>{" "}
-                  do UfersaMentor.
-                </span>
-              </label>
-              {termosErr && (
-                <p className="text-rose-600 text-xs mt-1.5 flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  Você precisa aceitar os termos para continuar.
-                </p>
-              )}
-            </div>
-            <button
-              type="submit"
-              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1"
-              style={{ backgroundColor: PRIMARY_BG }}
-            >
-              Criar Conta
-            </button>
-          </form>
+    <div className="min-h-screen flex flex-col p-4 bg-slate-50">
+        <main className="flex-1 flex items-center justify-center">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg">
+                <h2 className="text-xl font-bold mb-6">Criar conta</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                        <FormField label="Nome" error={errs.nome}><input value={form.nome} onChange={(e) => setF("nome", e.target.value)} className={inputCls(!!errs.nome)}/></FormField>
+                        <FormField label="Sobrenome" error={errs.sobrenome}><input value={form.sobrenome} onChange={(e) => setF("sobrenome", e.target.value)} className={inputCls(!!errs.sobrenome)}/></FormField>
+                    </div>
+                    <FormField label="Matrícula" error={errs.matricula}><input value={form.matricula} onChange={(e) => setF("matricula", e.target.value)} className={inputCls(!!errs.matricula)}/></FormField>
+                    <FormField label="E-mail" error={errs.email}><input value={form.email} onChange={(e) => setF("email", e.target.value)} className={inputCls(!!errs.email)}/></FormField>
+                    <FormField label="Senha" error={errs.senha}><input type="password" value={form.senha} onChange={(e) => setF("senha", e.target.value)} className={inputCls(!!errs.senha)}/></FormField>
+                    <FormField label="Confirmar Senha" error={errs.confirmar}><input type="password" value={form.confirmar} onChange={(e) => setF("confirmar", e.target.value)} className={inputCls(!!errs.confirmar)}/></FormField>
+                    
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={termos} onChange={(e) => setTermos(e.target.checked)} />
+                        Aceito os termos de uso.
+                    </label>
 
-          {/* Terms modals */}
-          {termsModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
-                  <h3
-                    className="text-base font-semibold text-slate-800"
-                    style={{ fontFamily: "Manrope, sans-serif" }}
-                  >
-                    {termsModal === "uso"
-                      ? "Termos de Uso"
-                      : "Política de Privacidade"}
-                  </h3>
-                  <button
-                    onClick={() => setTermsModal(null)}
-                    className="text-slate-400 hover:text-slate-600 transition"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="overflow-y-auto flex-1 px-6 py-5 text-sm text-slate-600 space-y-4">
-                  {termsModal === "uso" ? (
-                    <>
-                      <p className="font-semibold text-slate-800">
-                        1. Aceitação dos Termos
-                      </p>
-                      <p>
-                        Ao criar uma conta no UfersaMentor, você concorda em
-                        cumprir estes Termos de Uso. A plataforma destina-se
-                        exclusivamente a estudantes, monitores e professores
-                        vinculados ao Centro Multidisciplinar de Pau dos Ferros
-                        da UFERSA.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        2. Uso Adequado
-                      </p>
-                      <p>
-                        O usuário compromete-se a utilizar a plataforma de forma
-                        ética e respeitosa. É proibido o uso para fins
-                        fraudulentos, envio de conteúdo ofensivo, ou qualquer
-                        atividade que prejudique outros usuários ou a
-                        instituição.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        3. Responsabilidades do Monitor
-                      </p>
-                      <p>
-                        O monitor é responsável por manter seus horários de
-                        plantão atualizados, comparecer às sessões agendadas e
-                        disponibilizar materiais de qualidade acadêmica. O
-                        limite máximo é de 12 horas semanais de monitoria.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        4. Responsabilidades do Aluno
-                      </p>
-                      <p>
-                        O aluno deve cancelar agendamentos com antecedência
-                        mínima de 2 horas. O não comparecimento recorrente sem
-                        aviso prévio poderá resultar em restrição de acesso à
-                        plataforma.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        5. Propriedade dos Materiais
-                      </p>
-                      <p>
-                        Os materiais postados pelos monitores são de uso
-                        exclusivo para fins acadêmicos no âmbito da UFERSA. É
-                        proibida a redistribuição ou uso comercial desses
-                        materiais.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        6. Suspensão de Conta
-                      </p>
-                      <p>
-                        A administração reserva-se o direito de suspender ou
-                        encerrar contas que violem estes termos, após
-                        notificação ao usuário.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-slate-800">
-                        1. Dados Coletados
-                      </p>
-                      <p>
-                        O UfersaMentor coleta nome completo, matrícula, e-mail
-                        institucional e informações de uso da plataforma para
-                        fins de gerenciamento das monitorias e identificação do
-                        usuário.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        2. Uso dos Dados
-                      </p>
-                      <p>
-                        Os dados coletados são utilizados exclusivamente para o
-                        funcionamento da plataforma: identificação de usuários,
-                        gerenciamento de horários, emissão de relatórios de
-                        frequência e comunicação entre monitores, alunos e
-                        professores.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        3. Compartilhamento
-                      </p>
-                      <p>
-                        As informações dos usuários não são compartilhadas com
-                        terceiros. Apenas a coordenação e os professores
-                        responsáveis têm acesso aos dados relativos às
-                        monitorias sob sua orientação.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        4. Segurança
-                      </p>
-                      <p>
-                        Adotamos medidas técnicas para proteger os dados
-                        pessoais dos usuários. As senhas são armazenadas de
-                        forma criptografada e o acesso é restrito por perfil de
-                        usuário.
-                      </p>
-                      <p className="font-semibold text-slate-800">
-                        5. Retenção e Exclusão
-                      </p>
-                      <p>
-                        Os dados são mantidos pelo período necessário ao
-                        funcionamento do sistema acadêmico. O usuário pode
-                        solicitar a exclusão de sua conta mediante contato com a
-                        coordenação do curso.
-                      </p>
-                      <p className="font-semibold text-slate-800">6. Contato</p>
-                      <p>
-                        Em caso de dúvidas sobre o tratamento de dados, entre em
-                        contato com a Coordenação do Centro Multidisciplinar de
-                        Pau dos Ferros — UFERSA.
-                      </p>
-                    </>
-                  )}
-                </div>
-                <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
-                  <button
-                    onClick={() => setTermsModal(null)}
-                    className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-                  >
-                    Fechar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTermos(true);
-                      setTermosErr(false);
-                      setTermsModal(null);
-                    }}
-                    className="flex-1 px-4 py-2.5 text-white rounded-xl text-sm font-semibold transition"
-                    style={{ backgroundColor: PRIMARY_BG }}
-                  >
-                    Li e aceito
-                  </button>
-                </div>
-              </div>
+                    <button type="submit" className="w-full bg-blue-700 text-white py-3 rounded-xl font-bold">Criar Conta</button>
+                </form>
             </div>
-          )}
-          <p className="text-center text-sm text-slate-500 mt-5">
-            Já tem conta?{" "}
-            <button
-              onClick={onGoLogin}
-              className="font-semibold hover:underline"
-              style={{ color: PRIMARY_BG }}
-            >
-              Fazer login
-            </button>
-          </p>
-        </div>
-      </main>
-      <footer className="text-center py-3.5 text-xs text-slate-400 border-t border-slate-200 bg-white">
-        © 2026 UfersaMentor – Gerenciamento de Monitorias. Todos os direitos
-        reservados.
-      </footer>
+        </main>
     </div>
   );
 }
@@ -7647,19 +7245,35 @@ function ProfileSection({
 export default function App() {
   const [screen, setScreen] = useState<"login" | "register">("login");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">(
-    "monitor",
-  );
+  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">("monitor");
 
+  // 1. ESTADOS DO SISTEMA (Arrays que alimentam a sua interface)
   const [users, setUsers] = useState<User[]>(SEED_USERS);
-  const [turmas, setTurmas] = useState<Turma[]>(SEED_TURMAS);
-  const [monitorias, setMonitorias] = useState<Monitoria[]>(SEED_MONS);
-  const [horarios, setHorarios] = useState<Horario[]>(SEED_HORS);
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>(SEED_AGEND);
-  const [chamadas, setChamadas] = useState<Chamada[]>(SEED_CHAMS);
-  const [materiais, setMateriais] = useState<Material[]>(SEED_MATERIAIS);
-  const [relatorios, setRelatorios] = useState<Relatorio[]>(SEED_RELATORIOS);
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [monitorias, setMonitorias] = useState<Monitoria[]>([]);
+  const [horarios, setHorarios] = useState<Horario[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [chamadas, setChamadas] = useState<Chamada[]>([]);
+  const [materiais, setMateriais] = useState<Material[]>([]);
+  const [relatorios, setRelatorios] = useState<Relatorio[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
+
+ // 2. INTEGRAÇÃO REAL COM O POSTGRESQL (Node.js) 
+useEffect(() => {
+    // Buscar plantões
+    fetch('http://localhost:3001/api/plantoes')
+        .then(resposta => resposta.json())
+        .then(dados => { /* ... sua lógica de plantões ... */ });
+
+    // BUSCAR USUÁRIOS DO BANCO
+    fetch('http://localhost:3001/api/usuarios')
+        .then(resposta => resposta.json())
+        .then(dadosUsuarios => {
+            setUsers(dadosUsuarios); // Atualiza a lista com o que vem do Postgres
+        })
+        .catch(erro => console.warn("Erro ao buscar usuários:", erro));
+}, []);
+
   const addNotif = (n: Omit<Notif, "id" | "at" | "read">) =>
     setNotifs((p) => [
       ...p,
@@ -7688,7 +7302,6 @@ export default function App() {
     });
     setMonitorias(newMons);
     setUsers(updatedUsers);
-    // Update currentUser if their role changed
     if (currentUser) {
       const updatedSelf = updatedUsers.find((u) => u.id === currentUser.id);
       if (updatedSelf && updatedSelf.role !== currentUser.role)
