@@ -1,12 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
-
-import { 
-  authService, userService, turmaService, monitoriaService, 
-  horarioService, agendamentoService, chamadaService, 
-  materialService, relatorioService, notificacaoService,
-  setToken, getToken, clearToken
-} from "../services/api"; // Ajuste o caminho se a pasta estiver num local diferente
-
+import { useState, useMemo, useEffect, useRef } from "react";
+import { supabase } from "../lib/supabase";
+import * as api from "../lib/api";
 import {
   PieChart,
   Pie,
@@ -149,9 +143,6 @@ interface Notif {
 }
 
 // ─── Utility functions ────────────────────────────────────────────────────────
-
-let _uid = 999;
-const nid = () => `local_${++_uid}_${Date.now()}`;
 
 function today(): string {
   const d = new Date();
@@ -350,6 +341,10 @@ function minutesUntilSession(data: string, horaInicio: string): number {
 }
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
+
+// IDs temporários para novas entidades criadas offline (antes do sync com Supabase)
+let _uid = 0;
+const nid = () => `tmp_${++_uid}_${Date.now()}`;
 
 const BLOCOS = ["Bloco de Aulas I", "Bloco de Aulas II", "LTI"];
 
@@ -1207,9 +1202,11 @@ function AcademicIllustration() {
 // ─── Login Page ───────────────────────────────────────────────────────────────
 
 function LoginPage({
+  users,
   onLogin,
   onGoRegister,
 }: {
+  users: User[];
   onLogin: (u: User) => void;
   onGoRegister: () => void;
 }) {
@@ -1219,9 +1216,7 @@ function LoginPage({
   const [submitError, setSubmitError] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [emptyErr, setEmptyErr] = useState({ email: false, pass: false });
-  const [isLoading, setIsLoading] = useState(false);
 
-  // ... (mantenha os estados do Modal de recuperar senha iguais) ...
   const [fpModal, setFpModal] = useState(false);
   const [fpStep, setFpStep] = useState<"email" | "code" | "done">("email");
   const [fpEmail, setFpEmail] = useState("");
@@ -1232,8 +1227,10 @@ function LoginPage({
 
   const emailDomainErr = useMemo(() => {
     if (!email || !email.includes("@")) return "";
-    return email.endsWith("@alunos.ufersa.edu.br") || email.endsWith("@ufersa.edu.br") 
-      ? "" : "E-mail deve ser do domínio @alunos.ufersa.edu.br";
+    const ok =
+      email.endsWith("@alunos.ufersa.edu.br") ||
+      email.endsWith("@ufersa.edu.br");
+    return ok ? "" : "E-mail deve ser do domínio @alunos.ufersa.edu.br";
   }, [email]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1242,103 +1239,341 @@ function LoginPage({
     const noPass = !pass.trim();
     setEmptyErr({ email: noEmail, pass: noPass });
     setEmailTouched(true);
-    
-    if (noEmail || noPass || emailDomainErr) return;
-
-    setIsLoading(true);
-    setSubmitError("");
-
-    try {
-      // CONEXÃO REAL COM O BACKEND
-      const response = await authService.login(email, pass);
-      setToken(response.token); // Salva o token para requisições futuras
-      onLogin(response.user); // Entra no sistema com os dados do banco
-    } catch (err: any) {
-      setSubmitError(err.message || "E-mail ou senha incorretos.");
-    } finally {
-      setIsLoading(false);
+    if (noEmail || noPass) return;
+    if (emailDomainErr) return;
+    // ── Supabase Auth ──
+    const { user, error: authErr } = await api.signIn(email, pass);
+    if (authErr || !user) {
+      setSubmitError(
+        "E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.",
+      );
+      return;
     }
+    onLogin(user);
+  };
+
+  const openForgot = () => {
+    setFpModal(true);
+    setFpStep("email");
+    setFpEmail("");
+    setFpEmailErr("");
+    setFpCode("");
+    setFpCodeErr("");
+  };
+
+  const handleFpSend = () => {
+    if (!fpEmail.trim()) {
+      setFpEmailErr("Informe seu e-mail institucional.");
+      return;
+    }
+    if (
+      !fpEmail.endsWith("@alunos.ufersa.edu.br") &&
+      !fpEmail.endsWith("@ufersa.edu.br")
+    ) {
+      setFpEmailErr("E-mail deve ser do domínio institucional da UFERSA.");
+      return;
+    }
+    if (!users.some((u) => u.email === fpEmail)) {
+      setFpEmailErr("Nenhuma conta encontrada com este e-mail.");
+      return;
+    }
+    setFpLoading(true);
+    setTimeout(() => {
+      setFpLoading(false);
+      setFpStep("code");
+    }, 1500);
+  };
+
+  const handleFpVerify = () => {
+    if (fpCode.length < 6) {
+      setFpCodeErr("O código deve ter 6 dígitos.");
+      return;
+    }
+    setFpLoading(true);
+    setTimeout(() => {
+      setFpLoading(false);
+      setFpStep("done");
+    }, 1200);
   };
 
   const inputStyle = (hasErr: boolean) => inputCls(hasErr);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}>
+    <div
+      className="min-h-screen flex flex-col"
+      style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}
+    >
       <header className="bg-white border-b border-slate-200 py-4 px-6 text-center shadow-sm">
-        <h1 className="text-2xl font-extrabold tracking-tight" style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}>
+        <h1
+          className="text-2xl font-extrabold tracking-tight"
+          style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}
+        >
           UfersaMentor
         </h1>
-        <p className="text-xs font-medium tracking-widest uppercase mt-0.5" style={{ color: PRIMARY_BG }}>
+        <p
+          className="text-xs font-medium tracking-widest uppercase mt-0.5"
+          style={{ color: PRIMARY_BG }}
+        >
           Ufersa – Pau dos Ferros
         </p>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden flex min-h-[540px]">
-          <div className="hidden md:flex w-5/12 flex-col items-center justify-center p-10 gap-6" style={{ backgroundColor: SIDEBAR_BG }}>
+          <div
+            className="hidden md:flex w-5/12 flex-col items-center justify-center p-10 gap-6"
+            style={{ backgroundColor: SIDEBAR_BG }}
+          >
             <AcademicIllustration />
           </div>
 
           <div className="flex-1 flex flex-col justify-center px-8 md:px-10 py-8">
             <div className="mb-7">
-              <h2 className="text-xl font-bold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>Bem-vindo de volta</h2>
-              <p className="text-slate-500 text-sm mt-1">Acesse com o seu e-mail institucional para continuar</p>
+              <h2
+                className="text-xl font-bold text-slate-800"
+                style={{ fontFamily: "Manrope, sans-serif" }}
+              >
+                Bem-vindo de volta
+              </h2>
+              <p className="text-slate-500 text-sm mt-1">
+                Acesse com o seu e-mail institucional para continuar
+              </p>
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
-              <FormField label="E-mail Institucional" error={emptyErr.email ? "Este campo é obrigatório." : emailTouched && emailDomainErr ? emailDomainErr : undefined}>
+              <FormField
+                label="E-mail Institucional"
+                error={
+                  emptyErr.email
+                    ? "Este campo é obrigatório."
+                    : emailTouched && emailDomainErr
+                      ? emailDomainErr
+                      : undefined
+                }
+              >
                 <input
-                  type="email" value={email}
-                  onChange={(e) => { setEmail(e.target.value); setSubmitError(""); setEmptyErr((f) => ({ ...f, email: false })); }}
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setSubmitError("");
+                    setEmptyErr((f) => ({ ...f, email: false }));
+                  }}
                   onBlur={() => setEmailTouched(true)}
                   placeholder="seunome@alunos.ufersa.edu.br"
-                  className={inputStyle(emptyErr.email || (emailTouched && !!emailDomainErr))}
+                  className={inputStyle(
+                    emptyErr.email || (emailTouched && !!emailDomainErr),
+                  )}
                 />
               </FormField>
 
-              <FormField label="Senha" error={emptyErr.pass ? "Este campo é obrigatório." : undefined}>
+              <FormField
+                label="Senha"
+                error={emptyErr.pass ? "Este campo é obrigatório." : undefined}
+              >
                 <div className="relative">
                   <input
-                    type={showPass ? "text" : "password"} value={pass}
-                    onChange={(e) => { setPass(e.target.value); setSubmitError(""); setEmptyErr((f) => ({ ...f, pass: false })); }}
-                    placeholder="Sua senha" className={`${inputStyle(emptyErr.pass)} pr-10`}
+                    type={showPass ? "text" : "password"}
+                    value={pass}
+                    onChange={(e) => {
+                      setPass(e.target.value);
+                      setSubmitError("");
+                      setEmptyErr((f) => ({ ...f, pass: false }));
+                    }}
+                    placeholder="Sua senha"
+                    className={`${inputStyle(emptyErr.pass)} pr-10`}
                   />
-                  <button type="button" onClick={() => setShowPass((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
-                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <button
+                    type="button"
+                    onClick={() => setShowPass((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                  >
+                    {showPass ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
                   </button>
                 </div>
                 <div className="text-right mt-1.5">
-                  <button type="button" onClick={() => setFpModal(true)} className="text-xs hover:underline transition" style={{ color: PRIMARY_BG }}>
+                  <button
+                    type="button"
+                    onClick={openForgot}
+                    className="text-xs hover:underline transition"
+                    style={{ color: PRIMARY_BG }}
+                  >
                     Recuperar senha
                   </button>
                 </div>
               </FormField>
 
               {submitError && (
-                <div className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5`}>
+                <div
+                  className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5`}
+                >
                   <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
                   <p className="text-rose-700 text-sm">{submitError}</p>
                 </div>
               )}
 
               <button
-                type="submit" disabled={isLoading}
-                className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1 disabled:opacity-70"
+                type="submit"
+                className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1"
                 style={{ backgroundColor: PRIMARY_BG }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    "#2E5494";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    PRIMARY_BG;
+                }}
               >
-                {isLoading ? "Autenticando..." : "Entrar"}
+                Entrar
               </button>
             </form>
 
             <p className="text-center text-sm text-slate-500 mt-5">
               Não tem conta?{" "}
-              <button onClick={onGoRegister} className="font-semibold hover:underline transition" style={{ color: PRIMARY_BG }}>
+              <button
+                onClick={onGoRegister}
+                className="font-semibold hover:underline transition"
+                style={{ color: PRIMARY_BG }}
+              >
                 Cadastre-se
               </button>
             </p>
           </div>
         </div>
       </main>
+
+      <footer className="text-center py-3.5 text-xs text-slate-400 border-t border-slate-200 bg-white">
+        © 2026 UfersaMentor – Gerenciamento de Monitorias. Todos os direitos
+        reservados.
+      </footer>
+
+      {fpModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3
+                className="text-base font-semibold text-slate-800"
+                style={{ fontFamily: "Manrope, sans-serif" }}
+              >
+                Recuperar senha
+              </h3>
+              <button
+                onClick={() => setFpModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              {fpStep === "email" && (
+                <div className="space-y-4">
+                  <div
+                    className="flex items-start gap-3 p-3 rounded-xl border"
+                    style={{
+                      backgroundColor: "#EEF2FA",
+                      borderColor: "#C8D6EC",
+                    }}
+                  >
+                    <Mail
+                      className="w-5 h-5 flex-shrink-0 mt-0.5"
+                      style={{ color: PRIMARY_BG }}
+                    />
+                    <p className="text-sm" style={{ color: SIDEBAR_BG }}>
+                      Informe seu e-mail institucional. Enviaremos um código de
+                      verificação.
+                    </p>
+                  </div>
+                  <FormField label="E-mail Institucional" error={fpEmailErr}>
+                    <input
+                      type="email"
+                      value={fpEmail}
+                      onChange={(e) => {
+                        setFpEmail(e.target.value);
+                        setFpEmailErr("");
+                      }}
+                      placeholder="seu.nome@alunos.ufersa.edu.br"
+                      className={inputCls(!!fpEmailErr)}
+                    />
+                  </FormField>
+                  <button
+                    onClick={handleFpSend}
+                    disabled={fpLoading}
+                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm disabled:opacity-60"
+                    style={{ backgroundColor: PRIMARY_BG }}
+                  >
+                    {fpLoading ? "Enviando..." : "Enviar Código"}
+                  </button>
+                </div>
+              )}
+              {fpStep === "code" && (
+                <div className="space-y-4">
+                  <div
+                    className={`${OK_CLS} rounded-xl px-4 py-3 flex items-center gap-2`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <p className="text-emerald-700 text-sm">
+                      Código enviado para{" "}
+                      <span className="font-semibold">{fpEmail}</span>
+                    </p>
+                  </div>
+                  <FormField label="Código de Verificação" error={fpCodeErr}>
+                    <input
+                      value={fpCode}
+                      onChange={(e) => {
+                        setFpCode(
+                          e.target.value.replace(/\D/g, "").slice(0, 6),
+                        );
+                        setFpCodeErr("");
+                      }}
+                      placeholder="000000"
+                      maxLength={6}
+                      className={`${inputCls(!!fpCodeErr)} tracking-[0.4em] text-center font-mono`}
+                    />
+                  </FormField>
+                  <p className="text-xs text-slate-400 text-center">
+                    Demo: qualquer código de 6 dígitos é válido
+                  </p>
+                  <button
+                    onClick={handleFpVerify}
+                    disabled={fpLoading}
+                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm disabled:opacity-60"
+                    style={{ backgroundColor: PRIMARY_BG }}
+                  >
+                    {fpLoading ? "Verificando..." : "Verificar Código"}
+                  </button>
+                </div>
+              )}
+              {fpStep === "done" && (
+                <div className="text-center py-2 space-y-4">
+                  <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800">
+                      Código verificado!
+                    </p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Em produção, você definiria uma nova senha aqui.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setFpModal(false)}
+                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm"
+                    style={{ backgroundColor: PRIMARY_BG }}
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1371,14 +1606,11 @@ function RegisterPage({
     null,
   );
   const [success, setSuccess] = useState(false);
-  const [backendError, setBackendError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
   const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
   const setF = (k: string, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
     setTouched((t) => ({ ...t, [k]: true }));
-    setBackendError("");
   };
 
   const nameOk = (v: string) => /^[a-zA-ZÀ-ÿ\s]{2,}$/.test(v.trim());
@@ -1397,19 +1629,21 @@ function RegisterPage({
     if (touched.matricula && form.matricula) {
       if (!/^\d{10}$/.test(form.matricula))
         e.matricula = "Matrícula deve ter exatamente 10 dígitos.";
-      // A verificação de duplicidade da matrícula agora é feita no backend
+      else if (users.some((u) => u.matricula === form.matricula))
+        e.matricula = "Esta matrícula já está cadastrada no sistema.";
     }
     if (touched.email && form.email) {
       if (!form.email.endsWith("@alunos.ufersa.edu.br"))
         e.email = "E-mail deve ser do domínio @alunos.ufersa.edu.br";
-      // A verificação de duplicidade do e-mail agora é feita no backend
+      else if (users.some((u) => u.email === form.email))
+        e.email = "Este e-mail já está cadastrado.";
     }
     if (touched.senha && form.senha && (!pw.length || !pw.letter || !pw.number))
       e.senha = "A senha não atende todos os requisitos.";
     if (touched.confirmar && form.confirmar && form.confirmar !== form.senha)
       e.confirmar = "As senhas não coincidem.";
     return e;
-  }, [form, touched]);
+  }, [form, touched, users]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1422,46 +1656,36 @@ function RegisterPage({
       confirmar: true,
     };
     setTouched(allTouched);
-    
     if (!termos) {
       setTermosErr(true);
       return;
     }
-    
     if (
-      Object.keys(errs).length > 0 ||
-      !form.nome ||
-      !form.sobrenome ||
-      !form.email ||
-      !form.senha ||
-      !form.matricula
-    ) {
+      !nameOk(form.nome) ||
+      !nameOk(form.sobrenome) ||
+      !/^\d{10}$/.test(form.matricula) ||
+      users.some((u) => u.matricula === form.matricula) ||
+      !form.email.endsWith("@alunos.ufersa.edu.br") ||
+      users.some((u) => u.email === form.email) ||
+      !pw.length ||
+      !pw.letter ||
+      !pw.number ||
+      form.confirmar !== form.senha
+    )
+      return;
+    // ── Supabase Auth ──
+    const { user, error: regErr } = await api.signUp({
+      name: `${form.nome.trim()} ${form.sobrenome.trim()}`,
+      email: form.email,
+      password: form.senha,
+      matricula: form.matricula,
+    });
+    if (regErr || !user) {
+      setTouched({ ...allTouched, email: true });
       return;
     }
-
-    setIsLoading(true);
-    setBackendError("");
-
-    try {
-      // Chamada real para a API do backend
-      const response = await authService.register({
-        name: `${form.nome.trim()} ${form.sobrenome.trim()}`,
-        email: form.email,
-        password: form.senha,
-        matricula: form.matricula,
-      });
-      
-      // Mantendo compatibilidade com a prop original onRegister caso o App espere atualizar o array local
-      if (response && response.user) {
-        onRegister(response.user);
-      }
-      
-      setSuccess(true);
-    } catch (err: any) {
-      setBackendError(err.message || "Erro ao cadastrar. Verifique os dados fornecidos.");
-    } finally {
-      setIsLoading(false);
-    }
+    onRegister(user);
+    setSuccess(true);
   };
 
   if (success)
@@ -1557,7 +1781,7 @@ function RegisterPage({
                   value={form.nome}
                   onChange={(e) => setF("nome", e.target.value)}
                   onBlur={() => touch("nome")}
-                  placeholder="Seu Nome"
+                  placeholder="Seu nome"
                   className={inputCls(!!errs.nome)}
                 />
               </FormField>
@@ -1566,7 +1790,7 @@ function RegisterPage({
                   value={form.sobrenome}
                   onChange={(e) => setF("sobrenome", e.target.value)}
                   onBlur={() => touch("sobrenome")}
-                  placeholder="Seu Sobrenome"
+                  placeholder="Seu sobrenome"
                   className={inputCls(!!errs.sobrenome)}
                 />
               </FormField>
@@ -1659,13 +1883,17 @@ function RegisterPage({
               </div>
             </FormField>
             <div>
-             <label className="flex items-start gap-3 cursor-pointer select-none group">
-    <div
-      className={`mt-0.5 w-4 h-4 flex-shrink-0 rounded border-2 flex items-center justify-center transition ${termos ? "border-[#3B69B0] bg-[#3B69B0]" : termosErr ? "border-rose-400" : "border-slate-300 group-hover:border-[#3B69B0]"}`}
-    >
-      {termos && <CheckCircle2 className="w-3 h-3 text-white" />}
-    </div>
-    <input
+              <label className="flex items-start gap-3 cursor-pointer select-none group">
+                <div
+                  className={`mt-0.5 w-4 h-4 flex-shrink-0 rounded border-2 flex items-center justify-center transition ${termos ? "border-[#3B69B0] bg-[#3B69B0]" : termosErr ? "border-rose-400" : "border-slate-300 group-hover:border-[#3B69B0]"}`}
+                  onClick={() => {
+                    setTermos((t) => !t);
+                    setTermosErr(false);
+                  }}
+                >
+                  {termos && <CheckCircle2 className="w-3 h-3 text-white" />}
+                </div>
+                <input
                   type="checkbox"
                   checked={termos}
                   onChange={(e) => {
@@ -1709,21 +1937,12 @@ function RegisterPage({
                 </p>
               )}
             </div>
-
-            {backendError && (
-              <div className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5 mt-2`}>
-                <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
-                <p className="text-rose-700 text-sm">{backendError}</p>
-              </div>
-            )}
-
             <button
               type="submit"
-              disabled={isLoading}
-              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1 disabled:opacity-70"
+              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1"
               style={{ backgroundColor: PRIMARY_BG }}
             >
-              {isLoading ? "Criando conta..." : "Criar Conta"}
+              Criar Conta
             </button>
           </form>
 
@@ -1888,7 +2107,6 @@ function RegisterPage({
           <p className="text-center text-sm text-slate-500 mt-5">
             Já tem conta?{" "}
             <button
-              type="button"
               onClick={onGoLogin}
               className="font-semibold hover:underline"
               style={{ color: PRIMARY_BG }}
@@ -3508,7 +3726,7 @@ function StudentDashboard({
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar disciplina (ex: Cálculo, INF0001...)"
+                placeholder="Buscar disciplina (ex: Cálculo, PEX0102...)"
                 className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3B69B0]/40 bg-white shadow-sm text-slate-800 placeholder-slate-400"
               />
             </div>
@@ -7075,7 +7293,7 @@ function ProfileSection({
     setEditModal(true);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const e: Record<string, string> = {};
     if (
       !editForm.nome.trim() ||
@@ -7109,8 +7327,18 @@ function ProfileSection({
       )
     )
       e.matricula = "Matrícula já cadastrada.";
-    if (!editPass) e.pass = "Confirme com sua senha atual.";
-    else if (editPass !== user.password) e.pass = "Senha incorreta.";
+    if (!editPass) {
+      e.pass = "Confirme com sua senha atual.";
+      setEditErrs(e);
+      return;
+    }
+    // ── Verifica senha via Supabase (em vez de comparar plaintext) ──
+    const passOk = await api.verifyCurrentPassword(user.email, editPass);
+    if (!passOk) {
+      e.pass = "Senha incorreta.";
+      setEditErrs(e);
+      return;
+    }
     if (Object.keys(e).length) {
       setEditErrs(e);
       return;
@@ -7133,10 +7361,14 @@ function ProfileSection({
   const pwOk = (p: string) =>
     p.length >= 8 && /[a-zA-Z]/.test(p) && /\d/.test(p);
 
-  const savePass = () => {
+  const savePass = async () => {
     const e: Record<string, string> = {};
-    if (passForm.current !== user.password)
-      e.current = "Senha atual incorreta.";
+    // ── Verifica senha atual via Supabase ──
+    const passOk = await api.verifyCurrentPassword(
+      user.email,
+      passForm.current,
+    );
+    if (!passOk) e.current = "Senha atual incorreta.";
     if (!pwOk(passForm.newPass))
       e.newPass = "Mín. 8 caracteres, letras e números.";
     if (passForm.newPass === passForm.current)
@@ -7147,9 +7379,13 @@ function ProfileSection({
       setPassErrs(e);
       return;
     }
-    const updated = { ...user, password: passForm.newPass };
-    onUpdateUsers(users.map((u) => (u.id === user.id ? updated : u)));
-    onUpdateCurrentUser(updated);
+    // ── Atualiza senha no Supabase Auth ──
+    const { error: passErr } = await api.updateAuthPassword(passForm.newPass);
+    if (passErr) {
+      setPassErrs({ current: passErr });
+      return;
+    }
+    onUpdateCurrentUser({ ...user, password: "" });
     setPassModal(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -7257,7 +7493,7 @@ function ProfileSection({
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, nome: e.target.value }))
                 }
-                placeholder="João"
+                placeholder="Seu nome"
                 className={inputCls(!!editErrs.nome)}
               />
             </FormField>
@@ -7267,7 +7503,7 @@ function ProfileSection({
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, sobrenome: e.target.value }))
                 }
-                placeholder="Silva"
+                placeholder="Seu sobrenome"
                 className={inputCls(!!editErrs.sobrenome)}
               />
             </FormField>
@@ -7279,7 +7515,7 @@ function ProfileSection({
               onChange={(e) =>
                 setEditForm((f) => ({ ...f, email: e.target.value }))
               }
-              placeholder={`seunome${emailDomain}`}
+              placeholder={`seu.nome${emailDomain}`}
               className={inputCls(!!editErrs.email)}
             />
           </FormField>
@@ -7419,11 +7655,15 @@ function ProfileSection({
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // ── UI state ──────────────────────────────────────────────
   const [screen, setScreen] = useState<"login" | "register">("login");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">("monitor");
-  const [isInitializing, setIsInitializing] = useState(true); 
+  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">(
+    "monitor",
+  );
+  const [appLoading, setAppLoading] = useState(true);
 
+  // ── Data state (populated from Supabase on mount) ─────────
   const [users, setUsers] = useState<User[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [monitorias, setMonitorias] = useState<Monitoria[]>([]);
@@ -7433,88 +7673,133 @@ export default function App() {
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [relatorios, setRelatorios] = useState<Relatorio[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
-  
-  // Carrega todos os dados do Postgres
-  const fetchAllRealData = async () => {
-    try {
-      const [u, t, m, h, a, c, mat, rel, not] = await Promise.all([
-        userService.list().catch(() => []),
-        turmaService.list().catch(() => []),
-        monitoriaService.list().catch(() => []),
-        horarioService.list().catch(() => []),
-        agendamentoService.list().catch(() => []),
-        chamadaService.list().catch(() => []),
-        materialService.list().catch(() => []),
-        relatorioService.list().catch(() => []),
-        notificacaoService.list().catch(() => [])
-      ]);
-      setUsers(u); 
-      setTurmas(t); 
-      setMonitorias(m); 
-      setHorarios(h);
-      setAgendamentos(a); 
-      setChamadas(c); 
-      setMateriais(mat);
-      setRelatorios(rel); 
-      setNotifs(not);
-    } catch (err) {
-      console.error("Erro ao sincronizar dados com o backend:", err);
-    }
-  };
 
-  // Tenta fazer o Login Automático se existir um Token válido guardado
+  // Refs para snapshot (usado no diff → sync com Supabase)
+  const usersRef = useRef<User[]>([]);
+  const turmasRef = useRef<Turma[]>([]);
+  const monitoriasRef = useRef<Monitoria[]>([]);
+  const horariosRef = useRef<Horario[]>([]);
+  const agendamentosRef = useRef<Agendamento[]>([]);
+  const chamadaRef = useRef<Chamada[]>([]);
+  const materiaisRef = useRef<Material[]>([]);
+  const relatoriosRef = useRef<Relatorio[]>([]);
+
+  // ── Boot: verifica sessão e carrega dados ─────────────────
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = getToken();
-      if (token) {
-        try {
-          const user = await authService.me();
-          setCurrentUser(user);
-          setMonitorMode(user.role === "monitor" ? "monitor" : "student");
-          await fetchAllRealData();
-        } catch (error) {
-          clearToken(); // O token expirou ou é inválido
-        }
+    const boot = async () => {
+      // 1. Verifica sessão ativa
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await api.getCurrentUser();
+        if (profile) setCurrentUser(profile);
       }
-      setIsInitializing(false);
+
+      // 2. Carrega todos os dados do Supabase
+      try {
+        const d = await api.loadAllData();
+        setUsers(d.users);
+        usersRef.current = d.users;
+        setTurmas(d.turmas);
+        turmasRef.current = d.turmas;
+        setMonitorias(d.monitorias);
+        monitoriasRef.current = d.monitorias;
+        setHorarios(d.horarios);
+        horariosRef.current = d.horarios;
+        setAgendamentos(d.agendamentos);
+        agendamentosRef.current = d.agendamentos;
+        setChamadas(d.chamadas);
+        chamadaRef.current = d.chamadas;
+        setMateriais(d.materiais);
+        materiaisRef.current = d.materiais;
+        setRelatorios(d.relatorios);
+        relatoriosRef.current = d.relatorios;
+      } catch (err) {
+        console.error("Erro ao carregar dados:", err);
+      }
+      setAppLoading(false);
     };
-    checkAuth();
+    boot();
+
+    // 3. Realtime: notificações em tempo real
+    const channel = supabase
+      .channel("notificacoes")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notificacoes" },
+        (payload) => {
+          const n = payload.new as Record<string, unknown>;
+          setNotifs((prev) => [
+            {
+              id: n.id as string,
+              toUserId: n.to_user_id as string,
+              title: n.title as string,
+              body: n.body as string,
+              agendamentoId: n.agendamento_id as string | undefined,
+              read: false,
+              at: n.at as string,
+            },
+            ...prev,
+          ]);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const handleLogin = async (u: User) => {
-    setCurrentUser(u);
-    setMonitorMode(u.role === "monitor" ? "monitor" : "student");
-    await fetchAllRealData();
+  // ── Notificações ─────────────────────────────────────────
+  const addNotif = (n: Omit<Notif, "id" | "at" | "read">) => {
+    const local: Notif = {
+      ...n,
+      id: nid(),
+      at: new Date().toISOString(),
+      read: false,
+    };
+    setNotifs((p) => [local, ...p]);
+    api.createNotif(n).catch(console.error);
+  };
+  const markNotifRead = (id: string) => {
+    setNotifs((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    api.markNotifAsRead(id).catch(console.error);
   };
 
-  const handleLogout = () => {
-    clearToken();
+  // ── Auth ─────────────────────────────────────────────────
+  const handleLogin = (u: User) => {
+    setCurrentUser(u);
+    setMonitorMode("monitor");
+    // Carrega notificações do usuário
+    api.getNotificacoes(u.id).then(setNotifs).catch(console.error);
+  };
+
+  const handleLogout = async () => {
+    await api.signOut();
     setCurrentUser(null);
     setScreen("login");
-    // Limpa a memória por segurança
-    setUsers([]); setTurmas([]); setMonitorias([]); setHorarios([]);
-    setAgendamentos([]); setChamadas([]); setMateriais([]); setRelatorios([]); setNotifs([]);
+    setNotifs([]);
   };
 
-  const addNotif = async (n: Omit<Notif, "id" | "at" | "read">) => {
+  // ── Sync helpers ─────────────────────────────────────────
+  const syncAndSet = async <T extends { id: string }>(
+    ref: React.MutableRefObject<T[]>,
+    newArr: T[],
+    setter: (v: T[]) => void,
+    syncFn: (old: T[], next: T[]) => Promise<unknown>,
+  ) => {
+    setter(newArr);
     try {
-      const newNotif = await notificacaoService.create(n);
-      setNotifs((p) => [...p, newNotif]);
-    } catch (err) {
-      console.error("Erro ao enviar notificação", err);
+      await syncFn(ref.current, newArr);
+    } catch (e) {
+      console.error("sync error:", e);
     }
+    ref.current = newArr;
   };
 
-  const markNotifRead = async (id: string) => {
-    try {
-      await notificacaoService.markRead(id);
-      setNotifs((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    } catch (err) {
-      console.error("Erro ao marcar notificação", err);
-    }
-  };
-
-  const handleUpdateMonitorias = (newMons: Monitoria[]) => {
+  // ── handleUpdateMonitorias (lógica existente + sync) ──────
+  const handleUpdateMonitorias = async (newMons: Monitoria[]) => {
     const allMonitorIds = new Set(newMons.flatMap((m) => m.monitorIds));
     const updatedUsers = users.map((u) => {
       if (u.role === "student" && allMonitorIds.has(u.id))
@@ -7525,48 +7810,99 @@ export default function App() {
     });
     setMonitorias(newMons);
     setUsers(updatedUsers);
-    
     if (currentUser) {
       const updatedSelf = updatedUsers.find((u) => u.id === currentUser.id);
-      if (updatedSelf && updatedSelf.role !== currentUser.role) {
+      if (updatedSelf && updatedSelf.role !== currentUser.role)
         setCurrentUser(updatedSelf);
-      }
     }
+    // Sincroniza com Supabase
+    try {
+      await api.syncMonitorias(monitoriasRef.current, newMons);
+      // Sincroniza mudanças de role
+      for (const u of updatedUsers) {
+        const old = usersRef.current.find((x) => x.id === u.id);
+        if (old && old.role !== u.role)
+          await api.updateUserProfile(u.id, { role: u.role });
+      }
+    } catch (e) {
+      console.error("syncMonitorias:", e);
+    }
+    monitoriasRef.current = newMons;
+    usersRef.current = updatedUsers;
   };
 
-  // Ecrã de carregamento enquanto valida o Token no Backend
-  if (isInitializing) {
+  // Wrappers de sync para os demais handlers
+  const handleSetUsers = (newUsers: User[]) =>
+    syncAndSet(usersRef, newUsers, setUsers, api.syncUsers);
+  const handleSetTurmas = (newTurmas: Turma[]) =>
+    syncAndSet(turmasRef, newTurmas, setTurmas, api.syncTurmas);
+  const handleSetHorarios = (newHors: Horario[]) =>
+    syncAndSet(horariosRef, newHors, setHorarios, api.syncHorarios);
+  const handleSetAgendamentos = (newAgend: Agendamento[]) =>
+    syncAndSet(
+      agendamentosRef,
+      newAgend,
+      setAgendamentos,
+      api.syncAgendamentos,
+    );
+  const handleSetChamadas = (newChams: Chamada[]) =>
+    syncAndSet(chamadaRef, newChams, setChamadas, api.syncChamadas);
+  const handleSetMateriais = (newMats: Material[]) =>
+    syncAndSet(materiaisRef, newMats, setMateriais, api.syncMateriais);
+  const handleSetRelatorios = (newRels: Relatorio[]) =>
+    syncAndSet(relatoriosRef, newRels, setRelatorios, api.syncRelatorios);
+  const updateCurrentUser = (u: User) => {
+    setCurrentUser(u);
+    api
+      .updateUserProfile(u.id, {
+        name: u.name,
+        email: u.email,
+        matricula: u.matricula,
+        siape: u.siape,
+        status: u.status,
+      })
+      .catch(console.error);
+  };
+
+  // ── Loading inicial ───────────────────────────────────────
+  if (appLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: PAGE_BG }}>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "#EEF2FA" }}
+      >
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-[#3B69B0] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="font-semibold text-slate-600">A carregar UfersaMentor...</p>
+          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-700 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm font-medium text-slate-500">
+            Carregando UfersaMentor…
+          </p>
         </div>
       </div>
     );
   }
 
-  // ── AQUI ESTAVA O SEU ERRO DE CHAVES ──
-  // Se não estiver logado, mostra as páginas de autenticação
+  // ── Render ────────────────────────────────────────────────
   if (!currentUser) {
     if (screen === "register") {
       return (
         <RegisterPage
           users={users}
-          onRegister={(u) => setScreen("login")}
+          onRegister={(u) => {
+            setUsers((p) => [...p, u]);
+            usersRef.current = [...usersRef.current, u];
+          }}
           onGoLogin={() => setScreen("login")}
         />
       );
     }
-    
     return (
       <LoginPage
+        users={users}
         onLogin={handleLogin}
         onGoRegister={() => setScreen("register")}
       />
     );
   }
-  // ── FIM DA CORREÇÃO ──
 
   const commonProps = {
     users,
@@ -7576,11 +7912,7 @@ export default function App() {
     agendamentos,
     chamadas,
   };
-  
   const userNotifs = notifs.filter((n) => n.toUserId === currentUser.id);
-  const updateCurrentUser = (u: User) => setCurrentUser(u);
-
-  // ── Roteamento Interno dos Dashboards ──
 
   if (currentUser.role === "monitor" && monitorMode === "student") {
     return (
@@ -7588,8 +7920,8 @@ export default function App() {
         user={currentUser}
         {...commonProps}
         materiais={materiais}
-        onUpdateAgendamentos={setAgendamentos}
-        onUpdateUsers={setUsers}
+        onUpdateAgendamentos={handleSetAgendamentos}
+        onUpdateUsers={handleSetUsers}
         onUpdateCurrentUser={updateCurrentUser}
         onLogout={handleLogout}
         notifs={userNotifs}
@@ -7606,33 +7938,31 @@ export default function App() {
     );
   }
 
-  if (currentUser.role === "admin") {
+  if (currentUser.role === "admin")
     return (
       <AdminDashboard
         user={currentUser}
         users={users}
         turmas={turmas}
         monitorias={monitorias}
-        onUpdateUsers={setUsers}
-        onUpdateTurmas={setTurmas}
+        onUpdateUsers={handleSetUsers}
+        onUpdateTurmas={handleSetTurmas}
         onUpdateMonitorias={handleUpdateMonitorias}
         onLogout={handleLogout}
       />
     );
-  }
 
   const studentIsAlsoMonitor = monitorias.some((m) =>
     m.monitorIds.includes(currentUser.id),
   );
-
-  if (currentUser.role === "student") {
+  if (currentUser.role === "student")
     return (
       <StudentDashboard
         user={currentUser}
         {...commonProps}
         materiais={materiais}
-        onUpdateAgendamentos={setAgendamentos}
-        onUpdateUsers={setUsers}
+        onUpdateAgendamentos={handleSetAgendamentos}
+        onUpdateUsers={handleSetUsers}
         onUpdateCurrentUser={updateCurrentUser}
         onLogout={handleLogout}
         notifs={userNotifs}
@@ -7652,42 +7982,38 @@ export default function App() {
         }
       />
     );
-  }
 
-  if (currentUser.role === "monitor") {
+  if (currentUser.role === "monitor")
     return (
       <MonitorDashboard
         user={currentUser}
         {...commonProps}
         materiais={materiais}
         relatorios={relatorios}
-        onUpdateHorarios={setHorarios}
-        onUpdateAgendamentos={setAgendamentos}
-        onUpdateChamadas={setChamadas}
-        onUpdateMateriais={setMateriais}
-        onUpdateRelatorios={setRelatorios}
-        onUpdateUsers={setUsers}
+        onUpdateHorarios={handleSetHorarios}
+        onUpdateAgendamentos={handleSetAgendamentos}
+        onUpdateChamadas={handleSetChamadas}
+        onUpdateMateriais={handleSetMateriais}
+        onUpdateRelatorios={handleSetRelatorios}
+        onUpdateUsers={handleSetUsers}
         onUpdateCurrentUser={updateCurrentUser}
         onAddNotif={addNotif}
         onLogout={handleLogout}
         onSwitchToStudent={() => setMonitorMode("student")}
       />
     );
-  }
 
-  if (currentUser.role === "professor") {
+  if (currentUser.role === "professor")
     return (
       <ProfessorDashboard
         user={currentUser}
         {...commonProps}
         materiais={materiais}
         relatorios={relatorios}
-        onUpdateUsers={setUsers}
+        onUpdateUsers={handleSetUsers}
         onUpdateCurrentUser={updateCurrentUser}
         onLogout={handleLogout}
       />
     );
-  }
-
   return null;
 }
