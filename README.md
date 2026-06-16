@@ -1,110 +1,150 @@
-# SGM - Sistema de Gerenciamento de Monitorias
+# SGM - Sistema de Gerenciamento de Monitorias (UfersaMentor)
 
-## Sobre o Projeto
+## 1. Objetivo do Sistema
 
-O **SGM (Sistema de Gerenciamento de Monitorias)** é uma aplicação desenvolvida com o objetivo de facilitar o gerenciamento das monitorias acadêmicas da Universidade Federal Rural do Semi-Árido (UFERSA), permitindo o cadastro e o acompanhamento de monitores e sessões de monitoria em uma plataforma única.
+O **UfersaMentor** é uma plataforma desenvolvida para centralizar, organizar e automatizar o gerenciamento das monitorias acadêmicas do Centro Multidisciplinar de Pau dos Ferros da UFERSA.
 
-O projeto foi desenvolvido como atividade da disciplina de **Engenharia de Software** (PEX0162), aplicando conceitos de levantamento de requisitos, modelagem, prototipação, arquitetura de software, versionamento e desenvolvimento de um MVP.
-
----
-
-## Problema
-
-O gerenciamento de monitorias realizado de forma manual pode dificultar o controle das informações, o acompanhamento das atividades e a comunicação entre os participantes.
-
-O SGM busca centralizar essas informações, tornando o processo mais organizado, acessível e eficiente.
+O sistema busca integrar informações sobre horários, disciplinas, locais e monitores, facilitando o agendamento de atendimentos pelos alunos e proporcionando aos professores e coordenadores uma ferramenta para controle de frequência, acompanhamento das atividades e emissão de relatórios.
 
 ---
 
-## Principais Funcionalidades
+## 2. Descrição do Problema
 
-* Cadastro e autenticação de usuários;
-* Gerenciamento de monitores;
-* Visualização dos horários das monitorias;
-* Gerenciamento das informações do sistema;
+Atualmente, o gerenciamento das monitorias na UFERSA ocorre de forma descentralizada, utilizando meios como avisos verbais, e-mails e publicações no SIGAA.
 
-> **Observação:** Algumas funcionalidades fazem parte do planejamento do projeto e podem estar parcialmente implementadas nesta versão MVP.
+Essa situação gera dificuldades como:
+
+* falta de padronização das informações;
+* dificuldade para os alunos localizarem horários e monitores;
+* ausência de controle eficiente dos atendimentos realizados;
+* complexidade na elaboração de relatórios e folhas de frequência;
+* baixa rastreabilidade das atividades desenvolvidas.
+
+O **UfersaMentor** surge como uma solução para tornar esse processo mais organizado, acessível e eficiente.
 
 ---
 
-## Tecnologias Utilizadas
+## 3. Principais Funcionalidades
+
+* **Gestão de Acessos**
+
+  * Cadastro e gerenciamento de monitores.
+  * Autenticação unificada dos usuários.
+
+* **Busca de Monitorias**
+
+  * Pesquisa por disciplina.
+  * Pesquisa por monitor.
+  * Pesquisa por horário disponível.
+
+* **Agendamento**
+
+  * Reserva de vagas em plantões.
+  * Controle de conflitos e concorrência entre agendamentos.
+
+* **Controle de Frequência**
+
+  * Registro digital de presença e ausência dos alunos.
+
+* **Dashboards**
+
+  * Visualização de indicadores e métricas de desempenho.
+
+* **Comunicação**
+
+  * Chat interno entre alunos e monitores.
+
+* **Repositório de Materiais**
+
+  * Upload de materiais de apoio.
+  * Download de arquivos disponibilizados.
+
+* **Notificações**
+
+  * Lembretes de atendimentos.
+  * Avisos operacionais e comunicados importantes.
+
+---
+
+## 4. Tecnologias Utilizadas
 
 ### Frontend
 
+* React
+* TypeScript
 
-### Backend
+### Backend (Backend as a Service)
 
+* Supabase
 
 ### Banco de Dados
 
+* PostgreSQL (hospedado no Supabase)
 
 ### Ferramentas
 
 * Git
 * GitHub
+* Vite
+* Tailwind CSS
 
 ---
 
-## Estrutura do Projeto
+## 5. Estrutura do Projeto
 
 ```text
-SGM/
-│
-├── src/
-│   ├── frontend/
-│   └── backend/
-│
-├── docs/
-│   ├── arquitetura.md
-│   └── backlog.md
-│   └── diagramas.md
-│
-└── README.md
-```
 
-* **frontend/**: interface gráfica da aplicação.
-* **backend/**: regras de negócio e comunicação com o banco de dados.
-* **docs/**: documentação do projeto.
-* **README.md**: apresentação geral do sistema.
+```
 
 ---
 
-## Como Executar o Projeto
+## 6. Instruções de Execução
 
-### Clone o repositório
+### 6.1 Clone o repositório
+
+```bash
+git clone https://github.com/izalouyza/UfersaMentor
+```
+
+### 6.2 Acesse a pasta do projeto
 
 ```bash
 
 ```
 
-### Acesse a pasta do projeto
+### 6.3 Instale as dependências
 
 ```bash
 
 ```
 
-### Execute o frontend
+### 6.4 Configure as variáveis de ambiente
+
+Crie um arquivo **`.env`** na raiz do projeto contendo:
+
+```env
+VITE_SUPABASE_URL=sua_url_do_supabase
+VITE_SUPABASE_ANON_KEY=sua_chave_anonima
+```
+
+### 6.5 Execute a aplicação
 
 ```bash
 
 ```
 
-### Execute o backend
+Após a inicialização, acesse a URL exibida pelo Vite no navegador.
 
-```bash
-
-```
 ---
 
-## Protótipo
+## 7. Link do Protótipo
 
-Protótipo navegável:
-
-**Link:** **
+> **Protótipo navegável:**
+> 
 
 ---
 
-## Integrantes da Equipe
+## 8. Integrantes da Equipe
 
 * Ingridy Duarte Costa
 * Izadora Louyza Silva Figueiredo
@@ -112,20 +152,23 @@ Protótipo navegável:
 
 ---
 
-## Status do Desenvolvimento
+## 9. Status Atual do Desenvolvimento
 
-Atualmente o projeto encontra-se na fase de **MVP (Minimum Viable Product)**, contendo as principais funcionalidades implementadas para demonstrar a proposta da solução.
+O projeto encontra-se na fase de **MVP (Minimum Viable Product)**.
 
-Novas funcionalidades e melhorias poderão ser adicionadas em versões futuras.
+Atualmente, estão implementadas ou em fase final de integração as funcionalidades relacionadas à:
+
+* pesquisa de horários;
+* agendamento de monitorias;
+* gestão de plantões;
+* cadastro e gerenciamento de monitores;
+* autenticação utilizando o Supabase;
+* chat interno;
+* dashboards analíticos;
+* notificações inteligentes.
 
 ---
 
-## Documentação
+## 10. Licença
 
-A documentação complementar do projeto está disponível na pasta **`docs/`**, incluindo:
-
-* Arquitetura da aplicação;
-* Backlog atualizado;
-* Evolução do desenvolvimento.
-
----
+Este projeto foi desenvolvido para fins acadêmicos na disciplina de **Engenharia de Software** da **Universidade Federal Rural do Semiárido (UFERSA)**.
