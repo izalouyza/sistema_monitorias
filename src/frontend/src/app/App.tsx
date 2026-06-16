@@ -1,4 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
+
+import { 
+  authService, userService, turmaService, monitoriaService, 
+  horarioService, agendamentoService, chamadaService, 
+  materialService, relatorioService, notificacaoService,
+  setToken, getToken, clearToken
+} from "../services/api"; // Ajuste o caminho se a pasta estiver num local diferente
+
 import {
   PieChart,
   Pie,
@@ -141,6 +149,9 @@ interface Notif {
 }
 
 // ─── Utility functions ────────────────────────────────────────────────────────
+
+let _uid = 999;
+const nid = () => `local_${++_uid}_${Date.now()}`;
 
 function today(): string {
   const d = new Date();
@@ -339,25 +350,6 @@ function minutesUntilSession(data: string, horaInicio: string): number {
 }
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
-
-let _uid = 300;
-const nid = () => `g${++_uid}`;
-
-const SEED_USERS: User[] = [];
-
-const SEED_TURMAS: Turma[] = [];
-
-const SEED_MONS: Monitoria[] = [];
-
-const SEED_HORS: Horario[] = [];
-
-const SEED_AGEND: Agendamento[] = [];
-
-const SEED_CHAMS: Chamada[] = [];
-
-const SEED_MATERIAIS: Material[] = [];
-
-const SEED_RELATORIOS: Relatorio[] = [];
 
 const BLOCOS = ["Bloco de Aulas I", "Bloco de Aulas II", "LTI"];
 
@@ -1215,11 +1207,9 @@ function AcademicIllustration() {
 // ─── Login Page ───────────────────────────────────────────────────────────────
 
 function LoginPage({
-  users,
   onLogin,
   onGoRegister,
 }: {
-  users: User[];
   onLogin: (u: User) => void;
   onGoRegister: () => void;
 }) {
@@ -1229,7 +1219,9 @@ function LoginPage({
   const [submitError, setSubmitError] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [emptyErr, setEmptyErr] = useState({ email: false, pass: false });
+  const [isLoading, setIsLoading] = useState(false);
 
+  // ... (mantenha os estados do Modal de recuperar senha iguais) ...
   const [fpModal, setFpModal] = useState(false);
   const [fpStep, setFpStep] = useState<"email" | "code" | "done">("email");
   const [fpEmail, setFpEmail] = useState("");
@@ -1240,352 +1232,113 @@ function LoginPage({
 
   const emailDomainErr = useMemo(() => {
     if (!email || !email.includes("@")) return "";
-    const ok =
-      email.endsWith("@alunos.ufersa.edu.br") ||
-      email.endsWith("@ufersa.edu.br");
-    return ok ? "" : "E-mail deve ser do domínio @alunos.ufersa.edu.br";
+    return email.endsWith("@alunos.ufersa.edu.br") || email.endsWith("@ufersa.edu.br") 
+      ? "" : "E-mail deve ser do domínio @alunos.ufersa.edu.br";
   }, [email]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const noEmail = !email.trim();
     const noPass = !pass.trim();
     setEmptyErr({ email: noEmail, pass: noPass });
     setEmailTouched(true);
-    if (noEmail || noPass) return;
-    if (emailDomainErr) return;
-    const user = users.find((u) => u.email === email && u.password === pass);
-    if (!user) {
-      setSubmitError(
-        "E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.",
-      );
-      return;
-    }
-    onLogin(user);
-  };
+    
+    if (noEmail || noPass || emailDomainErr) return;
 
-  const openForgot = () => {
-    setFpModal(true);
-    setFpStep("email");
-    setFpEmail("");
-    setFpEmailErr("");
-    setFpCode("");
-    setFpCodeErr("");
-  };
+    setIsLoading(true);
+    setSubmitError("");
 
-  const handleFpSend = () => {
-    if (!fpEmail.trim()) {
-      setFpEmailErr("Informe seu e-mail institucional.");
-      return;
+    try {
+      // CONEXÃO REAL COM O BACKEND
+      const response = await authService.login(email, pass);
+      setToken(response.token); // Salva o token para requisições futuras
+      onLogin(response.user); // Entra no sistema com os dados do banco
+    } catch (err: any) {
+      setSubmitError(err.message || "E-mail ou senha incorretos.");
+    } finally {
+      setIsLoading(false);
     }
-    if (
-      !fpEmail.endsWith("@alunos.ufersa.edu.br") &&
-      !fpEmail.endsWith("@ufersa.edu.br")
-    ) {
-      setFpEmailErr("E-mail deve ser do domínio institucional da UFERSA.");
-      return;
-    }
-    if (!users.some((u) => u.email === fpEmail)) {
-      setFpEmailErr("Nenhuma conta encontrada com este e-mail.");
-      return;
-    }
-    setFpLoading(true);
-    setTimeout(() => {
-      setFpLoading(false);
-      setFpStep("code");
-    }, 1500);
-  };
-
-  const handleFpVerify = () => {
-    if (fpCode.length < 6) {
-      setFpCodeErr("O código deve ter 6 dígitos.");
-      return;
-    }
-    setFpLoading(true);
-    setTimeout(() => {
-      setFpLoading(false);
-      setFpStep("done");
-    }, 1200);
   };
 
   const inputStyle = (hasErr: boolean) => inputCls(hasErr);
 
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}
-    >
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: PAGE_BG, fontFamily: "Inter, sans-serif" }}>
       <header className="bg-white border-b border-slate-200 py-4 px-6 text-center shadow-sm">
-        <h1
-          className="text-2xl font-extrabold tracking-tight"
-          style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}
-        >
+        <h1 className="text-2xl font-extrabold tracking-tight" style={{ fontFamily: "Manrope, sans-serif", color: SIDEBAR_BG }}>
           UfersaMentor
         </h1>
-        <p
-          className="text-xs font-medium tracking-widest uppercase mt-0.5"
-          style={{ color: PRIMARY_BG }}
-        >
+        <p className="text-xs font-medium tracking-widest uppercase mt-0.5" style={{ color: PRIMARY_BG }}>
           Ufersa – Pau dos Ferros
         </p>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden flex min-h-[540px]">
-          <div
-            className="hidden md:flex w-5/12 flex-col items-center justify-center p-10 gap-6"
-            style={{ backgroundColor: SIDEBAR_BG }}
-          >
+          <div className="hidden md:flex w-5/12 flex-col items-center justify-center p-10 gap-6" style={{ backgroundColor: SIDEBAR_BG }}>
             <AcademicIllustration />
           </div>
 
           <div className="flex-1 flex flex-col justify-center px-8 md:px-10 py-8">
             <div className="mb-7">
-              <h2
-                className="text-xl font-bold text-slate-800"
-                style={{ fontFamily: "Manrope, sans-serif" }}
-              >
-                Bem-vindo de volta
-              </h2>
-              <p className="text-slate-500 text-sm mt-1">
-                Acesse com o seu e-mail institucional para continuar
-              </p>
+              <h2 className="text-xl font-bold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>Bem-vindo de volta</h2>
+              <p className="text-slate-500 text-sm mt-1">Acesse com o seu e-mail institucional para continuar</p>
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
-              <FormField
-                label="E-mail Institucional"
-                error={
-                  emptyErr.email
-                    ? "Este campo é obrigatório."
-                    : emailTouched && emailDomainErr
-                      ? emailDomainErr
-                      : undefined
-                }
-              >
+              <FormField label="E-mail Institucional" error={emptyErr.email ? "Este campo é obrigatório." : emailTouched && emailDomainErr ? emailDomainErr : undefined}>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setSubmitError("");
-                    setEmptyErr((f) => ({ ...f, email: false }));
-                  }}
+                  type="email" value={email}
+                  onChange={(e) => { setEmail(e.target.value); setSubmitError(""); setEmptyErr((f) => ({ ...f, email: false })); }}
                   onBlur={() => setEmailTouched(true)}
                   placeholder="seunome@alunos.ufersa.edu.br"
-                  className={inputStyle(
-                    emptyErr.email || (emailTouched && !!emailDomainErr),
-                  )}
+                  className={inputStyle(emptyErr.email || (emailTouched && !!emailDomainErr))}
                 />
               </FormField>
 
-              <FormField
-                label="Senha"
-                error={emptyErr.pass ? "Este campo é obrigatório." : undefined}
-              >
+              <FormField label="Senha" error={emptyErr.pass ? "Este campo é obrigatório." : undefined}>
                 <div className="relative">
                   <input
-                    type={showPass ? "text" : "password"}
-                    value={pass}
-                    onChange={(e) => {
-                      setPass(e.target.value);
-                      setSubmitError("");
-                      setEmptyErr((f) => ({ ...f, pass: false }));
-                    }}
-                    placeholder="Sua senha"
-                    className={`${inputStyle(emptyErr.pass)} pr-10`}
+                    type={showPass ? "text" : "password"} value={pass}
+                    onChange={(e) => { setPass(e.target.value); setSubmitError(""); setEmptyErr((f) => ({ ...f, pass: false })); }}
+                    placeholder="Sua senha" className={`${inputStyle(emptyErr.pass)} pr-10`}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-                  >
-                    {showPass ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
+                  <button type="button" onClick={() => setShowPass((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
+                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 <div className="text-right mt-1.5">
-                  <button
-                    type="button"
-                    onClick={openForgot}
-                    className="text-xs hover:underline transition"
-                    style={{ color: PRIMARY_BG }}
-                  >
+                  <button type="button" onClick={() => setFpModal(true)} className="text-xs hover:underline transition" style={{ color: PRIMARY_BG }}>
                     Recuperar senha
                   </button>
                 </div>
               </FormField>
 
               {submitError && (
-                <div
-                  className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5`}
-                >
+                <div className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5`}>
                   <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
                   <p className="text-rose-700 text-sm">{submitError}</p>
                 </div>
               )}
 
               <button
-                type="submit"
-                className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1"
+                type="submit" disabled={isLoading}
+                className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1 disabled:opacity-70"
                 style={{ backgroundColor: PRIMARY_BG }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor =
-                    "#2E5494";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor =
-                    PRIMARY_BG;
-                }}
               >
-                Entrar
+                {isLoading ? "Autenticando..." : "Entrar"}
               </button>
             </form>
 
             <p className="text-center text-sm text-slate-500 mt-5">
               Não tem conta?{" "}
-              <button
-                onClick={onGoRegister}
-                className="font-semibold hover:underline transition"
-                style={{ color: PRIMARY_BG }}
-              >
+              <button onClick={onGoRegister} className="font-semibold hover:underline transition" style={{ color: PRIMARY_BG }}>
                 Cadastre-se
               </button>
             </p>
           </div>
         </div>
       </main>
-
-      <footer className="text-center py-3.5 text-xs text-slate-400 border-t border-slate-200 bg-white">
-        © 2026 UfersaMentor – Gerenciamento de Monitorias. Todos os direitos
-        reservados.
-      </footer>
-
-      {fpModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3
-                className="text-base font-semibold text-slate-800"
-                style={{ fontFamily: "Manrope, sans-serif" }}
-              >
-                Recuperar senha
-              </h3>
-              <button
-                onClick={() => setFpModal(false)}
-                className="text-slate-400 hover:text-slate-600 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-6 py-5">
-              {fpStep === "email" && (
-                <div className="space-y-4">
-                  <div
-                    className="flex items-start gap-3 p-3 rounded-xl border"
-                    style={{
-                      backgroundColor: "#EEF2FA",
-                      borderColor: "#C8D6EC",
-                    }}
-                  >
-                    <Mail
-                      className="w-5 h-5 flex-shrink-0 mt-0.5"
-                      style={{ color: PRIMARY_BG }}
-                    />
-                    <p className="text-sm" style={{ color: SIDEBAR_BG }}>
-                      Informe seu e-mail institucional. Enviaremos um código de
-                      verificação.
-                    </p>
-                  </div>
-                  <FormField label="E-mail Institucional" error={fpEmailErr}>
-                    <input
-                      type="email"
-                      value={fpEmail}
-                      onChange={(e) => {
-                        setFpEmail(e.target.value);
-                        setFpEmailErr("");
-                      }}
-                      placeholder="seunome@alunos.ufersa.edu.br"
-                      className={inputCls(!!fpEmailErr)}
-                    />
-                  </FormField>
-                  <button
-                    onClick={handleFpSend}
-                    disabled={fpLoading}
-                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm disabled:opacity-60"
-                    style={{ backgroundColor: PRIMARY_BG }}
-                  >
-                    {fpLoading ? "Enviando..." : "Enviar Código"}
-                  </button>
-                </div>
-              )}
-              {fpStep === "code" && (
-                <div className="space-y-4">
-                  <div
-                    className={`${OK_CLS} rounded-xl px-4 py-3 flex items-center gap-2`}
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <p className="text-emerald-700 text-sm">
-                      Código enviado para{" "}
-                      <span className="font-semibold">{fpEmail}</span>
-                    </p>
-                  </div>
-                  <FormField label="Código de Verificação" error={fpCodeErr}>
-                    <input
-                      value={fpCode}
-                      onChange={(e) => {
-                        setFpCode(
-                          e.target.value.replace(/\D/g, "").slice(0, 6),
-                        );
-                        setFpCodeErr("");
-                      }}
-                      placeholder="000000"
-                      maxLength={6}
-                      className={`${inputCls(!!fpCodeErr)} tracking-[0.4em] text-center font-mono`}
-                    />
-                  </FormField>
-                  <p className="text-xs text-slate-400 text-center">
-                    Demo: qualquer código de 6 dígitos é válido
-                  </p>
-                  <button
-                    onClick={handleFpVerify}
-                    disabled={fpLoading}
-                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm disabled:opacity-60"
-                    style={{ backgroundColor: PRIMARY_BG }}
-                  >
-                    {fpLoading ? "Verificando..." : "Verificar Código"}
-                  </button>
-                </div>
-              )}
-              {fpStep === "done" && (
-                <div className="text-center py-2 space-y-4">
-                  <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-800">
-                      Código verificado!
-                    </p>
-                    <p className="text-sm text-slate-500 mt-1">
-                      Em produção, você definiria uma nova senha aqui.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setFpModal(false)}
-                    className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm"
-                    style={{ backgroundColor: PRIMARY_BG }}
-                  >
-                    Fechar
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1618,11 +1371,14 @@ function RegisterPage({
     null,
   );
   const [success, setSuccess] = useState(false);
+  const [backendError, setBackendError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
   const setF = (k: string, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
     setTouched((t) => ({ ...t, [k]: true }));
+    setBackendError("");
   };
 
   const nameOk = (v: string) => /^[a-zA-ZÀ-ÿ\s]{2,}$/.test(v.trim());
@@ -1641,23 +1397,21 @@ function RegisterPage({
     if (touched.matricula && form.matricula) {
       if (!/^\d{10}$/.test(form.matricula))
         e.matricula = "Matrícula deve ter exatamente 10 dígitos.";
-      else if (users.some((u) => u.matricula === form.matricula))
-        e.matricula = "Esta matrícula já está cadastrada no sistema.";
+      // A verificação de duplicidade da matrícula agora é feita no backend
     }
     if (touched.email && form.email) {
       if (!form.email.endsWith("@alunos.ufersa.edu.br"))
         e.email = "E-mail deve ser do domínio @alunos.ufersa.edu.br";
-      else if (users.some((u) => u.email === form.email))
-        e.email = "Este e-mail já está cadastrado.";
+      // A verificação de duplicidade do e-mail agora é feita no backend
     }
     if (touched.senha && form.senha && (!pw.length || !pw.letter || !pw.number))
       e.senha = "A senha não atende todos os requisitos.";
     if (touched.confirmar && form.confirmar && form.confirmar !== form.senha)
       e.confirmar = "As senhas não coincidem.";
     return e;
-  }, [form, touched, users]);
+  }, [form, touched]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const allTouched = {
       nome: true,
@@ -1668,32 +1422,46 @@ function RegisterPage({
       confirmar: true,
     };
     setTouched(allTouched);
+    
     if (!termos) {
       setTermosErr(true);
       return;
     }
+    
     if (
-      !nameOk(form.nome) ||
-      !nameOk(form.sobrenome) ||
-      !/^\d{10}$/.test(form.matricula) ||
-      users.some((u) => u.matricula === form.matricula) ||
-      !form.email.endsWith("@alunos.ufersa.edu.br") ||
-      users.some((u) => u.email === form.email) ||
-      !pw.length ||
-      !pw.letter ||
-      !pw.number ||
-      form.confirmar !== form.senha
-    )
+      Object.keys(errs).length > 0 ||
+      !form.nome ||
+      !form.sobrenome ||
+      !form.email ||
+      !form.senha ||
+      !form.matricula
+    ) {
       return;
-    onRegister({
-      id: nid(),
-      name: `${form.nome.trim()} ${form.sobrenome.trim()}`,
-      email: form.email,
-      password: form.senha,
-      role: "student",
-      matricula: form.matricula,
-    });
-    setSuccess(true);
+    }
+
+    setIsLoading(true);
+    setBackendError("");
+
+    try {
+      // Chamada real para a API do backend
+      const response = await authService.register({
+        name: `${form.nome.trim()} ${form.sobrenome.trim()}`,
+        email: form.email,
+        password: form.senha,
+        matricula: form.matricula,
+      });
+      
+      // Mantendo compatibilidade com a prop original onRegister caso o App espere atualizar o array local
+      if (response && response.user) {
+        onRegister(response.user);
+      }
+      
+      setSuccess(true);
+    } catch (err: any) {
+      setBackendError(err.message || "Erro ao cadastrar. Verifique os dados fornecidos.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (success)
@@ -1945,12 +1713,21 @@ function RegisterPage({
                 </p>
               )}
             </div>
+
+            {backendError && (
+              <div className={`${ERR_CLS} rounded-xl px-4 py-3 flex items-start gap-2.5 mt-2`}>
+                <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
+                <p className="text-rose-700 text-sm">{backendError}</p>
+              </div>
+            )}
+
             <button
               type="submit"
-              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1"
+              disabled={isLoading}
+              className="w-full text-white font-semibold py-2.5 rounded-xl transition text-sm mt-1 disabled:opacity-70"
               style={{ backgroundColor: PRIMARY_BG }}
             >
-              Criar Conta
+              {isLoading ? "Criando conta..." : "Criar Conta"}
             </button>
           </form>
 
@@ -2115,6 +1892,7 @@ function RegisterPage({
           <p className="text-center text-sm text-slate-500 mt-5">
             Já tem conta?{" "}
             <button
+              type="button"
               onClick={onGoLogin}
               className="font-semibold hover:underline"
               style={{ color: PRIMARY_BG }}
@@ -7647,34 +7425,97 @@ function ProfileSection({
 export default function App() {
   const [screen, setScreen] = useState<"login" | "register">("login");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">(
-    "monitor",
-  );
+  const [monitorMode, setMonitorMode] = useState<"monitor" | "student">("monitor");
+  const [isInitializing, setIsInitializing] = useState(true); 
 
-  const [users, setUsers] = useState<User[]>(SEED_USERS);
-  const [turmas, setTurmas] = useState<Turma[]>(SEED_TURMAS);
-  const [monitorias, setMonitorias] = useState<Monitoria[]>(SEED_MONS);
-  const [horarios, setHorarios] = useState<Horario[]>(SEED_HORS);
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>(SEED_AGEND);
-  const [chamadas, setChamadas] = useState<Chamada[]>(SEED_CHAMS);
-  const [materiais, setMateriais] = useState<Material[]>(SEED_MATERIAIS);
-  const [relatorios, setRelatorios] = useState<Relatorio[]>(SEED_RELATORIOS);
+  const [users, setUsers] = useState<User[]>([]);
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [monitorias, setMonitorias] = useState<Monitoria[]>([]);
+  const [horarios, setHorarios] = useState<Horario[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [chamadas, setChamadas] = useState<Chamada[]>([]);
+  const [materiais, setMateriais] = useState<Material[]>([]);
+  const [relatorios, setRelatorios] = useState<Relatorio[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
-  const addNotif = (n: Omit<Notif, "id" | "at" | "read">) =>
-    setNotifs((p) => [
-      ...p,
-      { ...n, id: nid(), at: new Date().toISOString(), read: false },
-    ]);
-  const markNotifRead = (id: string) =>
-    setNotifs((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
-
-  const handleLogin = (u: User) => {
-    setCurrentUser(u);
-    setMonitorMode("monitor");
+  
+  // Carrega todos os dados do Postgres
+  const fetchAllRealData = async () => {
+    try {
+      const [u, t, m, h, a, c, mat, rel, not] = await Promise.all([
+        userService.list().catch(() => []),
+        turmaService.list().catch(() => []),
+        monitoriaService.list().catch(() => []),
+        horarioService.list().catch(() => []),
+        agendamentoService.list().catch(() => []),
+        chamadaService.list().catch(() => []),
+        materialService.list().catch(() => []),
+        relatorioService.list().catch(() => []),
+        notificacaoService.list().catch(() => [])
+      ]);
+      setUsers(u); 
+      setTurmas(t); 
+      setMonitorias(m); 
+      setHorarios(h);
+      setAgendamentos(a); 
+      setChamadas(c); 
+      setMateriais(mat);
+      setRelatorios(rel); 
+      setNotifs(not);
+    } catch (err) {
+      console.error("Erro ao sincronizar dados com o backend:", err);
+    }
   };
+
+  // Tenta fazer o Login Automático se existir um Token válido guardado
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const user = await authService.me();
+          setCurrentUser(user);
+          setMonitorMode(user.role === "monitor" ? "monitor" : "student");
+          await fetchAllRealData();
+        } catch (error) {
+          clearToken(); // O token expirou ou é inválido
+        }
+      }
+      setIsInitializing(false);
+    };
+    checkAuth();
+  }, []);
+
+  const handleLogin = async (u: User) => {
+    setCurrentUser(u);
+    setMonitorMode(u.role === "monitor" ? "monitor" : "student");
+    await fetchAllRealData();
+  };
+
   const handleLogout = () => {
+    clearToken();
     setCurrentUser(null);
     setScreen("login");
+    // Limpa a memória por segurança
+    setUsers([]); setTurmas([]); setMonitorias([]); setHorarios([]);
+    setAgendamentos([]); setChamadas([]); setMateriais([]); setRelatorios([]); setNotifs([]);
+  };
+
+  const addNotif = async (n: Omit<Notif, "id" | "at" | "read">) => {
+    try {
+      const newNotif = await notificacaoService.create(n);
+      setNotifs((p) => [...p, newNotif]);
+    } catch (err) {
+      console.error("Erro ao enviar notificação", err);
+    }
+  };
+
+  const markNotifRead = async (id: string) => {
+    try {
+      await notificacaoService.markRead(id);
+      setNotifs((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    } catch (err) {
+      console.error("Erro ao marcar notificação", err);
+    }
   };
 
   const handleUpdateMonitorias = (newMons: Monitoria[]) => {
@@ -7688,32 +7529,48 @@ export default function App() {
     });
     setMonitorias(newMons);
     setUsers(updatedUsers);
-    // Update currentUser if their role changed
+    
     if (currentUser) {
       const updatedSelf = updatedUsers.find((u) => u.id === currentUser.id);
-      if (updatedSelf && updatedSelf.role !== currentUser.role)
+      if (updatedSelf && updatedSelf.role !== currentUser.role) {
         setCurrentUser(updatedSelf);
+      }
     }
   };
 
+  // Ecrã de carregamento enquanto valida o Token no Backend
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: PAGE_BG }}>
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-[#3B69B0] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="font-semibold text-slate-600">A carregar UfersaMentor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── AQUI ESTAVA O SEU ERRO DE CHAVES ──
+  // Se não estiver logado, mostra as páginas de autenticação
   if (!currentUser) {
     if (screen === "register") {
       return (
         <RegisterPage
           users={users}
-          onRegister={(u) => setUsers((p) => [...p, u])}
+          onRegister={(u) => setScreen("login")}
           onGoLogin={() => setScreen("login")}
         />
       );
     }
+    
     return (
       <LoginPage
-        users={users}
         onLogin={handleLogin}
         onGoRegister={() => setScreen("register")}
       />
     );
   }
+  // ── FIM DA CORREÇÃO ──
 
   const commonProps = {
     users,
@@ -7723,8 +7580,11 @@ export default function App() {
     agendamentos,
     chamadas,
   };
+  
   const userNotifs = notifs.filter((n) => n.toUserId === currentUser.id);
   const updateCurrentUser = (u: User) => setCurrentUser(u);
+
+  // ── Roteamento Interno dos Dashboards ──
 
   if (currentUser.role === "monitor" && monitorMode === "student") {
     return (
@@ -7750,7 +7610,7 @@ export default function App() {
     );
   }
 
-  if (currentUser.role === "admin")
+  if (currentUser.role === "admin") {
     return (
       <AdminDashboard
         user={currentUser}
@@ -7763,10 +7623,13 @@ export default function App() {
         onLogout={handleLogout}
       />
     );
+  }
+
   const studentIsAlsoMonitor = monitorias.some((m) =>
     m.monitorIds.includes(currentUser.id),
   );
-  if (currentUser.role === "student")
+
+  if (currentUser.role === "student") {
     return (
       <StudentDashboard
         user={currentUser}
@@ -7793,7 +7656,9 @@ export default function App() {
         }
       />
     );
-  if (currentUser.role === "monitor")
+  }
+
+  if (currentUser.role === "monitor") {
     return (
       <MonitorDashboard
         user={currentUser}
@@ -7812,7 +7677,9 @@ export default function App() {
         onSwitchToStudent={() => setMonitorMode("student")}
       />
     );
-  if (currentUser.role === "professor")
+  }
+
+  if (currentUser.role === "professor") {
     return (
       <ProfessorDashboard
         user={currentUser}
@@ -7824,5 +7691,7 @@ export default function App() {
         onLogout={handleLogout}
       />
     );
+  }
+
   return null;
 }

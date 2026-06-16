@@ -13,6 +13,7 @@ const materialRoutes = require('./routes/material.routes');
 const relatorioRoutes = require('./routes/relatorio.routes');
 const notificacaoRoutes = require('./routes/notificacao.routes');
 
+
 const app = express();
 
 // ── Middlewares ──
@@ -30,6 +31,7 @@ app.use('/api/chamadas', chamadaRoutes);
 app.use('/api/materiais', materialRoutes);
 app.use('/api/relatorios', relatorioRoutes);
 app.use('/api/notificacoes', notificacaoRoutes);
+
 
 // ── Health check ──
 app.get('/api/health', (req, res) => {
