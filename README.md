@@ -90,52 +90,95 @@ O **UfersaMentor** surge como uma solução para tornar esse processo mais organ
 
 ---
 
-## 5. Estrutura do Projeto
+### 5. Estrutura do Projeto
 
 ```text
-
+UfersaMentor/
+├── docs/
+│   ├── arquitetura.md
+│   ├── backlog.md
+│   └── diagramas.md
+│
+├── src/
+│   ├── components/       # Componentes reutilizáveis da interface
+│   ├── pages/            # Páginas da aplicação
+│   ├── services/         # Configuração do Supabase e serviços
+│   ├── assets/           # Recursos estáticos
+│   ├── styles/           # Arquivos de estilo
+│   └── supabase/         # Configurações e migrações do Supabase
+│
+├── .gitignore
+├── ATTRIBUTIONS.md
+├── README.md
+├── default_shadcn_theme.css
+├── index.html
+├── package.json
+├── pnpm-workspace.yaml
+├── postcss.config.mjs
+└── vite.config.ts
 ```
 
 ---
 
 ## 6. Instruções de Execução
 
+Para executar o **UfersaMentor** em sua máquina local, siga os passos descritos abaixo.
+
 ### 6.1 Clone o repositório
 
 ```bash
-git clone https://github.com/izalouyza/UfersaMentor
+git clone https://github.com/izalouyza/UfersaMentor.git
 ```
+
+---
 
 ### 6.2 Acesse a pasta do projeto
 
 ```bash
-
+cd UfersaMentor
 ```
+
+---
 
 ### 6.3 Instale as dependências
 
-```bash
+Certifique-se de que o **Node.js** esteja instalado em sua máquina. Em seguida, execute o comando abaixo para instalar todas as dependências do projeto:
 
+```bash
+npm install
 ```
+
+---
 
 ### 6.4 Configure as variáveis de ambiente
 
-Crie um arquivo **`.env`** na raiz do projeto contendo:
+Crie um arquivo chamado **`.env`** na raiz do projeto (no mesmo nível do arquivo `package.json`) e adicione as credenciais do seu projeto Supabase:
 
 ```env
-VITE_SUPABASE_URL=sua_url_do_supabase
-VITE_SUPABASE_ANON_KEY=sua_chave_anonima
+VITE_SUPABASE_URL=sua_url_do_supabase_aqui
+VITE_SUPABASE_ANON_KEY=sua_chave_anonima_aqui
 ```
+
+> **Observação:** Essas informações podem ser encontradas no painel do Supabase, em **Project Settings → API**.
+
+---
 
 ### 6.5 Execute a aplicação
 
-```bash
+Para iniciar o servidor de desenvolvimento, execute:
 
+```bash
+npm run dev
 ```
 
-Após a inicialização, acesse a URL exibida pelo Vite no navegador.
+Após a inicialização, o terminal exibirá um endereço semelhante a:
 
----
+```text
+http://localhost:5173
+```
+
+Abra esse endereço em seu navegador para acessar e utilizar o **UfersaMentor**.
+
 
 ## 7. Link do Protótipo
 Acesse abaixo o protótipo navegável:
